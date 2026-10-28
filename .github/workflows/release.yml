@@ -1,7 +1,5 @@
 # Builds Spline Studio from the private chenzizhen237-crypto/spline-studio source and publishes it
-# here: the server bundle and the macOS desktop app. It runs in this public repo because
-# GitHub-hosted runners are free for public repositories; in the private one a macOS build bills
-# ~10x per minute.
+# here: the server bundle and the macOS desktop app.
 #
 # Started by a v* tag in spline-studio (its release.yml sends a repository_dispatch) or by hand
 # from the Actions tab. Neither trigger can come from a fork or a pull request, so the secret stays
@@ -41,7 +39,10 @@ env:
 
 jobs:
   release:
-    runs-on: macos-latest # Apple silicon: the arm64 desktop build
+    # The self-hosted runner on Lucas's Mac (Apple silicon, label "release"): GitHub's hosted macOS arm64
+    # runners were too short of capacity to pick up jobs. Only dispatch and manual runs reach it, never
+    # a pull request, so fork code can't run there.
+    runs-on: [self-hosted, macOS, ARM64, release]
     timeout-minutes: 40
     steps:
       - name: Check the tag
