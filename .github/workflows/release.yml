@@ -1,0 +1,114 @@
+# Builds Spline Studio from the private chenzizhen237-crypto/spline-studio source and publishes it
+# here: the server bundle and the macOS desktop app. It runs in this public repo because
+# GitHub-hosted runners are free for public repositories; in the private one a macOS build bills
+# ~10x per minute.
+#
+# Started by a v* tag in spline-studio (its release.yml sends a repository_dispatch) or by hand
+# from the Actions tab. Neither trigger can come from a fork or a pull request, so the secret stays
+# here. A dry run builds, tests and packages any branch or tag and keeps the files as run artifacts
+# for a few days, without touching releases.
+#
+# Secret: SPLINE_SOURCE_TOKEN, a fine-grained personal access token with "Contents: read-only" on
+# chenzizhen237-crypto/spline-studio. Publishing uses this repo's own GITHUB_TOKEN.
+#
+# This repo is public, so the run logs are too: they show build and test output, not source.
+name: Release
+
+on:
+  repository_dispatch:
+    types: [release]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag in chenzizhen237-crypto/spline-studio to build, e.g. v0.3.1 (any branch or tag for a dry run)
+        required: true
+      dry_run:
+        description: Build, test and package without publishing
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create the release in this repo
+
+env:
+  TAG: ${{ github.event.client_payload.tag || inputs.tag }}
+  DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+  SOURCE_REF: ${{ (inputs.dry_run && (github.event.client_payload.tag || inputs.tag)) || format('refs/tags/{0}', github.event.client_payload.tag || inputs.tag) }}
+
+jobs:
+  release:
+    runs-on: macos-latest # Apple silicon: the arm64 desktop build
+    timeout-minutes: 40
+    steps:
+      - name: Check the tag
+        if: env.DRY_RUN != 'true'
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::not a version tag: '$TAG'"; exit 1; }
+      - uses: actions/checkout@v7
+        with:
+          repository: chenzizhen237-crypto/spline-studio
+          ref: ${{ env.SOURCE_REF }}
+          token: ${{ secrets.SPLINE_SOURCE_TOKEN }}
+          persist-credentials: false
+          path: src
+      - uses: pnpm/action-setup@v6 # version from package.json "packageManager"
+        with:
+          package_json_file: src/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          # No dependency cache: a poisoned cache entry would end up inside published installers.
+          package-manager-cache: false
+      - name: Install
+        working-directory: src
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck and test
+        working-directory: src
+        run: |
+          pnpm typecheck
+          pnpm test
+      - name: Build editor
+        working-directory: src
+        run: pnpm build
+      - name: Package server bundle
+        working-directory: src
+        run: |
+          name="spline-studio-${TAG//\//-}-server"
+          mkdir -p "out/$name/web"
+          cp -R package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json shared server "out/$name/"
+          cp -R web/package.json web/dist "out/$name/web/"
+          rm -rf "out/$name/server/data" "out/$name/server/test"
+          # The bundle only needs shared/server/web; drop desktop from its workspace list.
+          sed -i '' '/  - desktop/d' "out/$name/pnpm-workspace.yaml"
+          tar -C out -czf "out/$name.tar.gz" "$name"
+      - name: Package desktop app
+        working-directory: src
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          pnpm --filter @studio/desktop dist
+          mkdir -p out/desktop
+          cp desktop/release/*.dmg desktop/release/*.zip out/desktop/
+          ls -l out out/desktop
+      - name: Keep the dry-run files
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: spline-studio
+          path: |
+            src/out/*.tar.gz
+            src/out/desktop/*
+          retention-days: 3
+          if-no-files-found: error
+      - name: Publish
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" src/out/*.tar.gz src/out/desktop/* \
+            --title "Spline Studio $TAG" --target main \
+            --notes "Built from chenzizhen237-crypto/spline-studio at \`$TAG\`. The desktop app isn't signed: right-click → Open the first time."
