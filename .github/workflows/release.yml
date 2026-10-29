@@ -39,9 +39,9 @@ env:
 
 jobs:
   release:
-    # The self-hosted runner on Lucas's Mac (Apple silicon, label "release"): GitHub's hosted macOS arm64
-    # runners were too short of capacity to pick up jobs. Only dispatch and manual runs reach it, never
-    # a pull request, so fork code can't run there.
+    # A self-hosted Mac (Apple silicon, label "release"): GitHub's hosted macOS arm64 runners were too
+    # short of capacity to pick up jobs. This workflow never runs for pull requests, and the repo makes
+    # every outside contributor's workflow wait for approval, so fork code can't reach the runner.
     runs-on: [self-hosted, macOS, ARM64, release]
     timeout-minutes: 40
     steps:
