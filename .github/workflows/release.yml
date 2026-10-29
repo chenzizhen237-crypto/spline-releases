@@ -3,13 +3,13 @@
 #
 # Started by a v* tag in spline-studio (its release.yml sends a repository_dispatch) or by hand
 # from the Actions tab. Neither trigger can come from a fork or a pull request, so the secret stays
-# here. A dry run builds, tests and packages any branch or tag and keeps the files as run artifacts
+# here. A dry run builds and packages any branch or tag and keeps the files as run artifacts
 # for a few days, without touching releases.
 #
 # Secret: SPLINE_SOURCE_TOKEN, a fine-grained personal access token with "Contents: read-only" on
 # chenzizhen237-crypto/spline-studio. Publishing uses this repo's own GITHUB_TOKEN.
 #
-# This repo is public, so the run logs are too: they show build and test output, not source.
+# This repo is public, so the run logs are too: they show build output, not source.
 name: Release
 
 on:
@@ -67,11 +67,7 @@ jobs:
       - name: Install
         working-directory: src
         run: pnpm install --frozen-lockfile
-      - name: Typecheck and test
-        working-directory: src
-        run: |
-          pnpm typecheck
-          pnpm test
+      # No typecheck or tests: the tag is on main, which already passed CI in spline-studio.
       - name: Build editor
         working-directory: src
         run: pnpm build
